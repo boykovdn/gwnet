@@ -91,6 +91,8 @@ disallow_incomplete_defs = false
 check_untyped_defs = true
 strict = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+ignore_missing_imports = true
+disallow_subclassing_any = false
 
 [[tool.mypy.overrides]]
 module = "gwnet.*"

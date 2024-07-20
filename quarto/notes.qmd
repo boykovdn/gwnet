@@ -41,7 +41,7 @@ Make explicit the masking, write about it.
 
 #### Model
 - model/subgraph.py
-- layer/mixhop.py 
+- layer/mixhop.py
 - baseline
 
 There is actually a mixhop layer in PyG now, so use that. Will also have to redo subgraph.py to take in the entire graph with only spatial edges, no subsampling, no heterogeneity. Should end up being much, much simpler.
@@ -62,7 +62,7 @@ Not sure if we need any of these, but most are helper functions for the experime
 
 #### Data loading
 
-Previously the code used to work with StaticGraphTemporalSignal as the iterator to the dataset. I am guessing the advantage to that is in case you are using a RNN type network, which is likely quite common for temporal data. For that type of application, the data must come as a temporal sequence. 
+Previously the code used to work with StaticGraphTemporalSignal as the iterator to the dataset. I am guessing the advantage to that is in case you are using a RNN type network, which is likely quite common for temporal data. For that type of application, the data must come as a temporal sequence.
 For graph wavenet, we will train using minibatches that contain all the relevant temporal information as time series associated with a node. This means we don't necessarily need to adhere to the temporal sequence once, we can randomly sample and build our batches like that.
 
 - [ ] Introduce PyGT and PyG libraries.
@@ -72,10 +72,10 @@ I begin the implementation by removing the dependency on PyGT. PyGT was difficul
 So what should I use instead of StaticGraphTemporalSignal?
 
 PyG provides [instructions](https://pytorch-geometric.readthedocs.io/en/latest/tutorial/create_dataset.html#creating-in-memory-datasets) for creating your custom graph dataset, similarly to Pytorch.
-If the data is small enough to fit in RAM, then ```torch_geometric.data.InMemoryDataset``` is the recommended way to wrap the data, otherwise ```torch_geometric.data.Dataset``` is suggested. 
+If the data is small enough to fit in RAM, then ```torch_geometric.data.InMemoryDataset``` is the recommended way to wrap the data, otherwise ```torch_geometric.data.Dataset``` is suggested.
 The latter seems to be more general and you'd have to implement the logic behind creating individual graphs, maybe from a remote database or something like that.
 The former requires you to implement the logic for acquiring the full dataset, e.g downloading it from the internet, and turning it into a list of ```Data``` objects. They are then saved locally, and I guess PyG takes care for serving it from there.
-There already is a Zenodo [record](https://zenodo.org/records/5724362) for METR-LA and PEMS-BAY that somebody created, so let's use that as our source, and create an in-memory dataset class for it. Both datasets are less than 200Mb in size. 
+There already is a Zenodo [record](https://zenodo.org/records/5724362) for METR-LA and PEMS-BAY that somebody created, so let's use that as our source, and create an in-memory dataset class for it. Both datasets are less than 200Mb in size.
 Perhaps I should contribute this to PyG, and also create a different record that does not serve any ```pickle``` artefacts, which are known to be unsafe, after all.
 
 ![Background [photo](https://www.pexels.com/photo/pickles-on-a-glass-jar-8599631/) from Pexels.](./images/pickle_poster.png){}
@@ -97,7 +97,7 @@ InMemoryDataset.process()
 To obtain the data we will use the provided ```torch_geometric.data.download_url``` function.
 
 :::{.callout-note}
-While implementing a test, I noticed that pytest is set to turn warnings into errors by default, and changed it to ignore a deprecation warning from an upstream. It was about deprecating some kind of string representation which is used in PyG. 
+While implementing a test, I noticed that pytest is set to turn warnings into errors by default, and changed it to ignore a deprecation warning from an upstream. It was about deprecating some kind of string representation which is used in PyG.
 I wonder whether there is a better way of handling this, without ignoring deprecation warnings? Do we generally want to turn every warning into an error?
 :::
 
@@ -117,10 +117,14 @@ A datapoint of 0.0 actually represents a missing value, not a traffic speed of 0
 
 There are in total 207 nodes. The adjacency matrix is in the pickle, which contains all sensor ids, a dictionary map from id to index ranging from 0 to 206, and a numpy array with the edge weights. I think this can alternatively be easily represented as a json or yaml list of the edges from id, to id. This could avoid having to deal with pickles.
 
-So, creating an ```InMemoryDataset``` might be a little more challenging than I thought. 
+So, creating an ```InMemoryDataset``` might be a little more challenging than I thought.
 The thing is, the set of all ```Data``` samples are very big. The source data is small. This is because you end up not only copying the adjacency matrix over 30k times (207*207*30000*64bits~10Gb), once for each Data object, but you also copy the time series 12 times as well (64bits * 30000 steps * 12 * 2 features * 207 nodes ~ 1Gb), because each time measurement appears in about 12 nodes. The data is still rather small overall though. Actually, all Data objects come out to about 3Gb, because we are using sparse edge indices. Should be fine, so why the OOM? Because I was trying to torch.save numpy arrays. Not sure why it fails so spectacularly.
 Still, the memory usage spikes to about 10Gb RAM for saving the model.
 
 - [ ] Check if can remove numpy dependencies.
 
-Looks like the dataset might work any moment now.
+Looks like the dataset might work any moment now. Project left at running pre-commit. I've already made an initial commit. Might need to relax some pre-commit checks.
+
+:::{.callout-note}
+What are library stubs, and how do I install them? Why do I need them?
+:::

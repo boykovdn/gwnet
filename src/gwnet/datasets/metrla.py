@@ -1,22 +1,21 @@
-import torch
 import logging
-from torch_geometric.data import InMemoryDataset, download_url, Data
-from typing import Union, Optional, Callable
-import numpy as np
-
-import pandas as pd
 import os
+from collections.abc import Callable
+
+import numpy as np
+import pandas as pd
+import torch
+from torch_geometric.data import Data, InMemoryDataset, download_url
+
 
 class METRLA(InMemoryDataset):
-
-    def __init__(self, 
-                 root: Union[str, os.PathLike], 
-                 transform: Optional[Callable] = None,
-                 pre_transform: Optional[Callable] = None,
-                 pre_filter: Optional[Callable] = None,
-                 ):
-
-
+    def __init__(
+        self,
+        root: str | os.PathLike[str],
+        transform: Callable[[Data], Data] | None = None,
+        pre_transform: Callable[[Data], Data] | None = None,
+        pre_filter: Callable[[Data], Data] | None = None,
+    ):
         self.node_filename = "METR-LA.csv"
         self.url_node = "https://zenodo.org/record/5724362/files/METR-LA.csv?download=1"
         self.adj_filename = "adj_mx_METR-LA.pkl"
@@ -27,26 +26,26 @@ class METRLA(InMemoryDataset):
         self.load(self.processed_paths[0])
 
     @property
-    def raw_file_names(self):
+    def raw_file_names(self) -> list[str]:
         # TODO Pickle! Eww!
-        return ['METR-LA.csv', 'adj_mx_METR-LA.pkl']
+        return ["METR-LA.csv", "adj_mx_METR-LA.pkl"]
 
     @property
-    def processed_file_names(self):
-        return ['metrla.pt']
+    def processed_file_names(self) -> list[str]:
+        return ["metrla.pt"]
 
-    def download(self):
-        logging.info("Downloading {}".format(self.url_node))
+    def download(self) -> None:
+        logging.info("Downloading %s", self.url_node)
         download_url(self.url_node, self.raw_dir)
-        logging.info("Downloading {}".format(self.url_adj))
+        logging.info("Downloading %s", self.url_adj)
         download_url(self.url_adj, self.raw_dir)
         logging.info("Downloading finished.")
 
     def _get_edges(self, adj: np.ndarray) -> np.ndarray:
         edge_indices = np.asarray(adj != 0).nonzero()
         return np.array([edge_indices[0], edge_indices[1]])
-    
-    def _get_edge_weights(self, adj):
+
+    def _get_edge_weights(self, adj: np.ndarray) -> np.ndarray:
         return adj[adj != 0]
 
     def _z_normalization(self, features: np.ndarray, eps: float = 1e-19) -> np.ndarray:
@@ -60,8 +59,13 @@ class METRLA(InMemoryDataset):
         return (features - mean) / (std + eps)
 
     def _get_targets_and_features(
-            self, node_series: pd.DataFrame, num_timesteps_in: int, num_timesteps_out: int, interpolate: bool = False, normalize: bool = True
-    ):
+        self,
+        node_series: pd.DataFrame,
+        num_timesteps_in: int,
+        num_timesteps_out: int,
+        interpolate: bool = False,
+        normalize: bool = True,
+    ) -> tuple[np.ndarray, np.ndarray]:
         r"""
         Build the input and output features.
 
@@ -78,11 +82,11 @@ class METRLA(InMemoryDataset):
                 the dataset to 0 mean, std 1. These values are kept in
                 order to undo the normalisation if needed.
         """
-        #stacked_target = self._dataset["features"].values
+        # stacked_target = self._dataset["features"].values
         stacked_target = node_series.values
         if interpolate:
             raise NotImplementedError()
-            #stacked_target = self._interpolate(stacked_target)
+            # stacked_target = self._interpolate(stacked_target)
         if normalize:
             stacked_target = self._z_normalization(stacked_target)
 
@@ -103,17 +107,21 @@ class METRLA(InMemoryDataset):
             )
         ]
         targets = [
-            torch.from_numpy(stacked_target[
-                i + num_timesteps_in : i + num_timesteps_in + num_timesteps_out, 0, :
-            ].T)
+            torch.from_numpy(
+                stacked_target[
+                    i + num_timesteps_in : i + num_timesteps_in + num_timesteps_out,
+                    0,
+                    :,
+                ].T
+            )
             for i in range(
                 stacked_target.shape[0] - num_timesteps_in - num_timesteps_out
             )
         ]
 
         return features, targets
-        
-    def process(self):
+
+    def process(self) -> None:
         # Read data into huge `Data` list.
         # TODO
         node_ids, id_to_idx_map, adj = pd.read_pickle(self.raw_paths[1])
@@ -121,13 +129,13 @@ class METRLA(InMemoryDataset):
         edge_weights = torch.from_numpy(self._get_edge_weights(adj))
 
         node_series = pd.read_csv(self.raw_paths[0], index_col=0)
-        features, targets = self._get_targets_and_features(node_series, 12, 12) # TODO Parametrise in/out n steps.
+        features, targets = self._get_targets_and_features(
+            node_series, 12, 12
+        )  # TODO Parametrise in/out n steps.
         data_list = [
-                Data(x=features[i], 
-                    edge_index=edges, 
-                    edge_attr=edge_weights, 
-                    y=targets[i]) for i in range(len(features))
-                ]
+            Data(x=features[i], edge_index=edges, edge_attr=edge_weights, y=targets[i])
+            for i in range(len(features))
+        ]
 
         if self.pre_filter is not None:
             data_list = [data for data in data_list if self.pre_filter(data)]
