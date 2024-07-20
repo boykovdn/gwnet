@@ -1,0 +1,126 @@
+---
+title: Graph Wavenet reproduction (and some notes along the way)
+date: 15 07 2024
+---
+
+Graph Wavenet is a common baseline for testing your model against, and can be a good start when working with spatio temporal data, because it has a relatively simple architecture. I did not find the current implementations easy to work with, hence this repo.
+
+### Plan
+
+Currently can install everything except PyGT. So, next step is to modify the loader to return batches of PyG Data objects.
+
+1. MVP with no PyGT.
+2. Change GWnet to work on whole data, no subgraphs.
+3. Prioritise TODOs from here on.
+
+### TODOs
+
+- [ ] Port code I already have to this repo.
+- [ ] Identify the relevant bits that have to come in here.
+- [ ] Ensure dataloader downloads data from reputable place (Zenodo?) and no pickles are used.
+- [ ] Produce reproduction table for three metrics.
+- [ ] Setup CI/CD and testing.
+- [ ] Package indexed and installable via pip.
+
+### Files to move over
+
+#### Dataloaders
+- datasets/metrla.py
+- datasets/pemsbay.py
+
+Currently using torch geometric temporal dataset classes. Change to something that loads easier into the format GWnet needs.
+We want to provide more quality of life changes to the data downloading, unpacking, etc process.
+
+- [ ] Remove interpolation? At least note that it is off.
+- [ ] Remove having to load pickles.
+
+#### Loss
+- loss/supervised/*.py
+
+Make explicit the masking, write about it.
+
+#### Model
+- model/subgraph.py
+- layer/mixhop.py 
+- baseline
+
+There is actually a mixhop layer in PyG now, so use that. Will also have to redo subgraph.py to take in the entire graph with only spatial edges, no subsampling, no heterogeneity. Should end up being much, much simpler.
+Also, why not show the performance of a baseline? It's actually quite a bit stronger than the baseline that they show in the paper.
+Note we don't need any sampling for this version, since the entire traffic graph goes in.
+Also need to modify the model to use the vector embeddings as they have them in the paper. In our implementation we ignored them.
+
+#### Training
+- supervised/subgraph.py
+
+Will likely need to rewrite and simplify the training script. Also using lightning might simplify the code quite a bit. But maybe drop it, if we want to minimise the dependencies.
+
+#### Utils
+
+Not sure if we need any of these, but most are helper functions for the experiments we did.
+
+### Implementation notes
+
+#### Data loading
+
+Previously the code used to work with StaticGraphTemporalSignal as the iterator to the dataset. I am guessing the advantage to that is in case you are using a RNN type network, which is likely quite common for temporal data. For that type of application, the data must come as a temporal sequence. 
+For graph wavenet, we will train using minibatches that contain all the relevant temporal information as time series associated with a node. This means we don't necessarily need to adhere to the temporal sequence once, we can randomly sample and build our batches like that.
+
+- [ ] Introduce PyGT and PyG libraries.
+
+I begin the implementation by removing the dependency on PyGT. PyGT was difficult to install during RedyGraph, and it remains difficult to install to this day.
+
+So what should I use instead of StaticGraphTemporalSignal?
+
+PyG provides [instructions](https://pytorch-geometric.readthedocs.io/en/latest/tutorial/create_dataset.html#creating-in-memory-datasets) for creating your custom graph dataset, similarly to Pytorch.
+If the data is small enough to fit in RAM, then ```torch_geometric.data.InMemoryDataset``` is the recommended way to wrap the data, otherwise ```torch_geometric.data.Dataset``` is suggested. 
+The latter seems to be more general and you'd have to implement the logic behind creating individual graphs, maybe from a remote database or something like that.
+The former requires you to implement the logic for acquiring the full dataset, e.g downloading it from the internet, and turning it into a list of ```Data``` objects. They are then saved locally, and I guess PyG takes care for serving it from there.
+There already is a Zenodo [record](https://zenodo.org/records/5724362) for METR-LA and PEMS-BAY that somebody created, so let's use that as our source, and create an in-memory dataset class for it. Both datasets are less than 200Mb in size. 
+Perhaps I should contribute this to PyG, and also create a different record that does not serve any ```pickle``` artefacts, which are known to be unsafe, after all.
+
+![Background [photo](https://www.pexels.com/photo/pickles-on-a-glass-jar-8599631/) from Pexels.](./images/pickle_poster.png){}
+
+- [ ] Build two in-memory dataset loaders for METR-LA and PEMS-BAY, and push upstream to PyG.
+	- [ ] To push to upstream, I need to write the docstring as done in the other datasets.
+- [ ] Find a better way to distribute the adjacency matrix than a pickle.
+
+Anyway, I have opened that pickle in the past and I know it is safe, so let's build the loader on top of that and modify it later.
+Here are the functions I need to implement:
+
+```
+InMemoryDataset.raw_file_names()
+InMemoryDataset.processed_file_names()
+InMemoryDataset.download()
+InMemoryDataset.process()
+```
+
+To obtain the data we will use the provided ```torch_geometric.data.download_url``` function.
+
+:::{.callout-note}
+While implementing a test, I noticed that pytest is set to turn warnings into errors by default, and changed it to ignore a deprecation warning from an upstream. It was about deprecating some kind of string representation which is used in PyG. 
+I wonder whether there is a better way of handling this, without ignoring deprecation warnings? Do we generally want to turn every warning into an error?
+:::
+
+:::{.callout-note}
+How do you manage the location of downloaded datasets? That is, when a repo is downloaded, which in turn should download some data that gets stored locally. How do you control the filepaths when you don't have access to the local env? Ideally I wouldn't want to download these csv files always in the location from which the script is run - that would pollute the user's directories.
+:::
+
+The Zenodo upstream for METR-LA contains a csv that looks like this for some two nodes.
+
+:::{.callout-important}
+A datapoint of 0.0 actually represents a missing value, not a traffic speed of 0.
+:::
+
+```{=html}
+<table border="1" class="dataframe">  <thead>    <tr style="text-align: right;">      <th></th>      <th>Time</th>      <th>773869</th>      <th>767541</th>    </tr>  </thead>  <tbody>    <tr>      <th>0</th>      <td>2012-03-01 00:00:00</td>      <td>64.375000</td>      <td>67.625000</td>    </tr>    <tr>      <th>1</th>      <td>2012-03-01 00:05:00</td>      <td>62.666667</td>      <td>68.555556</td>    </tr>    <tr>      <th>2</th>      <td>2012-03-01 00:10:00</td>      <td>64.000000</td>      <td>63.750000</td>    </tr>    <tr>      <th>3</th>      <td>2012-03-01 00:15:00</td>      <td>0.000000</td>      <td>0.000000</td>    </tr>    <tr>      <th>4</th>      <td>2012-03-01 00:20:00</td>      <td>0.000000</td>      <td>0.000000</td>    </tr>  </tbody></table>
+```
+
+There are in total 207 nodes. The adjacency matrix is in the pickle, which contains all sensor ids, a dictionary map from id to index ranging from 0 to 206, and a numpy array with the edge weights. I think this can alternatively be easily represented as a json or yaml list of the edges from id, to id. This could avoid having to deal with pickles.
+
+So, creating an ```InMemoryDataset``` might be a little more challenging than I thought. 
+The thing is, the set of all ```Data``` samples are very big. The source data is small. This is because you end up not only copying the adjacency matrix over 30k times (207*207*30000*64bits~10Gb), once for each Data object, but you also copy the time series 12 times as well (64bits * 30000 steps * 12 * 2 features * 207 nodes ~ 1Gb), because each time measurement appears in about 12 nodes. The data is still rather small overall though. Actually, all Data objects come out to about 3Gb, because we are using sparse edge indices. Should be fine, so why the OOM? Because I was trying to torch.save numpy arrays. Not sure why it fails so spectacularly.
+Still, the memory usage spikes to about 10Gb RAM for saving the model.
+
+- [ ] Check if can remove numpy dependencies.
+
+Looks like the dataset might work any moment now.
