@@ -123,7 +123,6 @@ class METRLA(InMemoryDataset):
 
     def process(self) -> None:
         # Read data into huge `Data` list.
-        # TODO
         node_ids, id_to_idx_map, adj = pd.read_pickle(self.raw_paths[1])
         edges = torch.from_numpy(self._get_edges(adj))
         edge_weights = torch.from_numpy(self._get_edge_weights(adj))

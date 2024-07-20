@@ -126,5 +126,11 @@ Still, the memory usage spikes to about 10Gb RAM for saving the model.
 Looks like the dataset might work any moment now. Project left at running pre-commit. I've already made an initial commit. Might need to relax some pre-commit checks.
 
 :::{.callout-note}
-What are library stubs, and how do I install them? Why do I need them?
+What are library stubs, and how do I install them? Why do I need them? For now I just tell mypy not to ignore missing imports.
 :::
+
+Ok, the dataset can now be served, it seems. There are still some ends to tie up in that code, but let's leave it for now, it looks like it works correctly.
+
+#### Model and training loop
+
+Now let's build the graph wavenet model. I will first adapt my existing code, which implements the forward and backward diffusions, but not the adaptive adjacency matrix.
