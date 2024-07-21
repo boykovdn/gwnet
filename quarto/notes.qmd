@@ -1,9 +1,10 @@
 ---
 title: Graph Wavenet reproduction (and some notes along the way)
 date: 15 07 2024
+bibliography: gwnetrepro.bib
 ---
 
-Graph Wavenet is a common baseline for testing your model against, and can be a good start when working with spatio temporal data, because it has a relatively simple architecture. I did not find the current implementations easy to work with, hence this repo.
+Graph Wavenet [@wu2019graphwavenetdeepspatialtemporal] is a common baseline for testing your model against, and can be a good start when working with spatio temporal data, because it has a relatively simple architecture. I did not find the current implementations easy to work with, hence this repo.
 
 ### Plan
 
@@ -134,3 +135,60 @@ Ok, the dataset can now be served, it seems. There are still some ends to tie up
 #### Model and training loop
 
 Now let's build the graph wavenet model. I will first adapt my existing code, which implements the forward and backward diffusions, but not the adaptive adjacency matrix.
+
+::: {layout-ncol=2}
+
+![Graph wavenet architecture diagram from the [paper](https://arxiv.org/pdf/1906.00121)](./images/gwnet_arch.png)
+
+![Architecture diagram you can find in their code. As far as I recall it is not actually what they have implemented, but contains a bit more detail than the paper diagram.](./images/gwnet_code_diagram.png)
+
+:::
+
+:::{.callout-note}
+The official implementation differs somewhat from the diagram. In the code they have added convolutions along the residual and skip connections. Maybe that is common practice? It is not mentioned in the paper, and there is no appendix in the Arxiv version.
+:::
+
+There are two specific components to this architecture, denoted as TCN and GCN in the diagram. These are the temporal (causal) convolution, and the graph convolution.
+
+![Diagram of a series of causal convolutions. In this architecture, the sequence of dilated convolutions are applied in subsequent layers.](./images/tcn_diagram.png)
+
+TCN is motivated in the Wavenet [paper](https://arxiv.org/abs/1609.03499) as a way to aggregate information from an exponentially increasing receptive field. However, in graph wavenet it seems to have been applied with dilations of 1,2,1,2,..., so only aggregating information from a small number of timesteps back. 
+I am not sure why the authors have chosen not to retreive information from a larger temporal context, as is done in the Wavenet paper.
+The equation for the 'Gated TCN' component is the following:
+
+\begin{equation}
+    \mathbf{h} = g(\mathbf{\Theta}_1 * \mathbf{X} + \mathbf{b}) \odot \sigma(\mathbf{\Theta}_2 * \mathbf{X} + \mathbf{c})
+\end{equation}
+
+Here, $g(\cdot)$ and $\sigma(\cdot)$ are the hyperbolic tan and sigmoid activations, $*$ denotes a convolution (the causal convolution), and $\odot$ is the elementwise product. The input $\mathbf{X}$ is of shape $\mathbb{R}^{N \times D \times S}$ for $N$ nodes, feature dimensionality $D$, and $S$ timesteps back. For example, our METR-LA datapoints will have shape $\mathbb{R}^{207 \times 2 \times 12}$. Each node at a given timestep has two features - the traffic speed, and a number with periodicity of 288 steps (24 hours), which provides context for the time of day.
+
+The GCN module aggregates information between nodes along the traffic network. 
+The paper introduces three components to the GCN module. 
+Two of these are part of the so-called 'diffusion convolution' [@li2018diffusionconvolutionalrecurrentneural], which fundamentally tells us which nodes to include, and with what weight, when computing the node state update. It is computed by taking powers of the adjacency matrix. 
+This will include edges from a central node to nodes that are 'reachable' after a certain number of hops, reminiscent of diffusion along the edges.
+This is done once along the direction of the edges, and once against the direction of the edges (by using $\mathbf{A}^{\top}$ instead of $\mathbf{A}$), and these are called the 'forward' and 'backward' diffusion.
+
+In addition to the diffusion convolution, an 'adaptive' adjacency matrix is also added.
+Each node of the graph is assigned an embedding $\mathbf{E} \in \mathbb{R}^{c}$ which is learned during the training phase, and the adaptive adjacency matrix can be computed as
+
+\begin{equation}
+    \tilde{\mathbf{A}}_{adp} = \text{SoftMax}(\text{ReLU}(\mathbf{E}_1 \mathbf{E}_2^{\top}))
+\end{equation}
+
+Where $\mathbf{E}_1 \mathbf{E}_2^{\top}$ is an inner product. The adjacency matrix is normalised due to the softmax. This adaptive adjacency matrix is supposed to infer the 'transition matrix of a hidden diffusion process'. 
+It makes sense, I imagine, that you can learn the graph wiring which yields the best performance for your task.
+When you use this matrix in addition to the original adjacency, then it might be learning a diff between the current graph, and possibly more optimal version?
+It would be interesting to see whether the adjacency matrix can learn to somewhat recover the original road network, if used on its own.
+
+The full equation with diffusion in both directions and the adaptive adjacency is
+
+\begin{equation}
+    \mathbf{Z} = \sum_{k=0}^{K}\mathbf{P}^k_f \mathbf{X} \mathbf{W}_1 + \mathbf{P}^k_b \mathbf{X} \mathbf{W}_2 + \tilde{\mathbf{A}}^k_{apt} \mathbf{X} \mathbf{W}_3
+\end{equation}
+
+Here $\mathbf{W}_{1,2,3}$ are parameters, $\mathbf{P}$ are the forward and backward diffusion transition matrices, $\tilde{\mathbf{A}}_{apt}$ is the adaptive adjacency matrix, and $\mathbf{X}$ is the input. The adjacency matrices are all raised to the power $k$.
+
+### References
+
+::: {#refs}
+:::
