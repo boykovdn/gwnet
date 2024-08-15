@@ -15,13 +15,25 @@ class METRLA(InMemoryDataset):
         transform: Callable[[Data], Data] | None = None,
         pre_transform: Callable[[Data], Data] | None = None,
         pre_filter: Callable[[Data], Data] | None = None,
+        in_timesteps: int = 13,
+        out_timesteps: int = 12,
     ):
+        r"""
+        Args:
+            ...
+
+            in_timesteps (int): The number of timesteps contained in each node.
+
+            out_timesteps (int): The number of timesteps ahead in the target.
+        """
         self.node_filename = "METR-LA.csv"
         self.url_node = "https://zenodo.org/record/5724362/files/METR-LA.csv?download=1"
         self.adj_filename = "adj_mx_METR-LA.pkl"
         self.url_adj = (
             "https://zenodo.org/record/5724362/files/adj_mx_METR-LA.pkl?download=1"
         )
+        self.in_timesteps = in_timesteps
+        self.out_timesteps = out_timesteps
         super().__init__(root, transform, pre_transform, pre_filter)
         self.load(self.processed_paths[0])
 
@@ -100,8 +112,9 @@ class METRLA(InMemoryDataset):
         stacked_target = np.concatenate(
             [stacked_target[:, None, :], saw_tooth[:, None, :]], 1
         )
+        # TODO Parameterise the precision.
         features = [
-            torch.from_numpy(stacked_target[i : i + num_timesteps_in, :, :].T)
+            torch.from_numpy(stacked_target[i : i + num_timesteps_in, :, :].T).float()
             for i in range(
                 stacked_target.shape[0] - num_timesteps_in - num_timesteps_out
             )
@@ -113,7 +126,7 @@ class METRLA(InMemoryDataset):
                     0,
                     :,
                 ].T
-            )
+            ).float()
             for i in range(
                 stacked_target.shape[0] - num_timesteps_in - num_timesteps_out
             )
@@ -129,8 +142,8 @@ class METRLA(InMemoryDataset):
 
         node_series = pd.read_csv(self.raw_paths[0], index_col=0)
         features, targets = self._get_targets_and_features(
-            node_series, 12, 12
-        )  # TODO Parametrise in/out n steps.
+            node_series, self.in_timesteps, self.out_timesteps
+        )
         data_list = [
             Data(x=features[i], edge_index=edges, edge_attr=edge_weights, y=targets[i])
             for i in range(len(features))

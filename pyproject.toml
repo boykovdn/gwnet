@@ -44,7 +44,8 @@ dependencies = [
   "torch_geometric",
   "numpy",
   "pandas",
-  "scipy"
+  "scipy",
+  "lightning"
 ]
 
 [project.optional-dependencies]

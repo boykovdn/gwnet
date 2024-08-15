@@ -152,7 +152,7 @@ There are two specific components to this architecture, denoted as TCN and GCN i
 
 ![Diagram of a series of causal convolutions. In this architecture, the sequence of dilated convolutions are applied in subsequent layers.](./images/tcn_diagram.png)
 
-TCN is motivated in the Wavenet [paper](https://arxiv.org/abs/1609.03499) as a way to aggregate information from an exponentially increasing receptive field. However, in graph wavenet it seems to have been applied with dilations of 1,2,1,2,..., so only aggregating information from a small number of timesteps back. 
+TCN is motivated in the Wavenet [paper](https://arxiv.org/abs/1609.03499) as a way to aggregate information from an exponentially increasing receptive field. However, in graph wavenet it seems to have been applied with dilations of 1,2,1,2,..., so only aggregating information from a small number of timesteps back.
 I am not sure why the authors have chosen not to retreive information from a larger temporal context, as is done in the Wavenet paper.
 The equation for the 'Gated TCN' component is the following:
 
@@ -162,9 +162,9 @@ The equation for the 'Gated TCN' component is the following:
 
 Here, $g(\cdot)$ and $\sigma(\cdot)$ are the hyperbolic tan and sigmoid activations, $*$ denotes a convolution (the causal convolution), and $\odot$ is the elementwise product. The input $\mathbf{X}$ is of shape $\mathbb{R}^{N \times D \times S}$ for $N$ nodes, feature dimensionality $D$, and $S$ timesteps back. For example, our METR-LA datapoints will have shape $\mathbb{R}^{207 \times 2 \times 12}$. Each node at a given timestep has two features - the traffic speed, and a number with periodicity of 288 steps (24 hours), which provides context for the time of day.
 
-The GCN module aggregates information between nodes along the traffic network. 
-The paper introduces three components to the GCN module. 
-Two of these are part of the so-called 'diffusion convolution' [@li2018diffusionconvolutionalrecurrentneural], which fundamentally tells us which nodes to include, and with what weight, when computing the node state update. It is computed by taking powers of the adjacency matrix. 
+The GCN module aggregates information between nodes along the traffic network.
+The paper introduces three components to the GCN module.
+Two of these are part of the so-called 'diffusion convolution' [@li2018diffusionconvolutionalrecurrentneural], which fundamentally tells us which nodes to include, and with what weight, when computing the node state update. It is computed by taking powers of the adjacency matrix.
 This will include edges from a central node to nodes that are 'reachable' after a certain number of hops, reminiscent of diffusion along the edges.
 This is done once along the direction of the edges, and once against the direction of the edges (by using $\mathbf{A}^{\top}$ instead of $\mathbf{A}$), and these are called the 'forward' and 'backward' diffusion.
 
@@ -175,7 +175,7 @@ Each node of the graph is assigned an embedding $\mathbf{E} \in \mathbb{R}^{c}$ 
     \tilde{\mathbf{A}}_{adp} = \text{SoftMax}(\text{ReLU}(\mathbf{E}_1 \mathbf{E}_2^{\top}))
 \end{equation}
 
-Where $\mathbf{E}_1 \mathbf{E}_2^{\top}$ is an inner product. The adjacency matrix is normalised due to the softmax. This adaptive adjacency matrix is supposed to infer the 'transition matrix of a hidden diffusion process'. 
+Where $\mathbf{E}_1 \mathbf{E}_2^{\top}$ is an inner product. The adjacency matrix is normalised due to the softmax. This adaptive adjacency matrix is supposed to infer the 'transition matrix of a hidden diffusion process'.
 It makes sense, I imagine, that you can learn the graph wiring which yields the best performance for your task.
 When you use this matrix in addition to the original adjacency, then it might be learning a diff between the current graph, and possibly more optimal version?
 It would be interesting to see whether the adjacency matrix can learn to somewhat recover the original road network, if used on its own.
@@ -187,6 +187,199 @@ The full equation with diffusion in both directions and the adaptive adjacency i
 \end{equation}
 
 Here $\mathbf{W}_{1,2,3}$ are parameters, $\mathbf{P}$ are the forward and backward diffusion transition matrices, $\tilde{\mathbf{A}}_{apt}$ is the adaptive adjacency matrix, and $\mathbf{X}$ is the input. The adjacency matrices are all raised to the power $k$.
+The forward and backward diffusion matrices are computed by normalising the adjacency matrix and interpreting each unit weight as carrying a unit of probability of transition.
+
+\begin{equation}
+    \mathbf{P}_f = \frac{\mathbf{A}}{\sum_j\mathbf{A}_{ij}}
+\end{equation}
+
+\begin{equation}
+    \mathbf{P}_b = \frac{\mathbf{A^{\top}}}{\sum_j\mathbf{A^{\top}}_{ij}}
+\end{equation}
+
+The original graph wavenet implementation works on the entire road network without subsampling. Maybe we can implement subsampling, but for now let's follow how they've done it originally.
+In principle, GWnet has a limited receptive field, so anything more than that amounts to batching (right?).
+Allowing spatial subsampling should be nice for when training on bigger graphs.
+
+![Let's refactor some of the gems in the original implementation. This is difficult to read, but also exceptions should be used for exceptional circumstances, and not for controlling execution in high performance code.](./images/tryexcept.png)
+
+The TCN layer can be implemented using a Conv1d or Conv2d on the 2-by-12 'image'.
+Latter is how they've done it in the original implementation.
+It is a bit difficult to read though.
+They say that the causality can be achieved by padding the input with eros on one side.
+Note how they mention the increasing dilation factors for capturing exponential receptive field, but they then explicitly don't do that and never motivate their choice.
+
+A design choice they've made is to set the padding, stride, and dilation parameters such that the input sequence gets gradually reduced to 1.
+I suppose I'll just do the same.
+If you set the Conv1D kernel size to 2, dilation to 1, and add no padding, the output sequence will be shorter by 1.
+If you do the same, but dilation 2, the output will be shorter by 2.
+They keep all kernel sizes 2, and have a sequence of dilations $\left[1,2,1,2,1,2,1,2\right]$ for their 8 layers.
+This means that for an input sequence of 13, the final layer will be dealing with an input sequence of 1.
+Hence, our TCN-a and TCN-b will be made of ```nn.Conv1d(32, 32, ks=2, dilation=d)``` where the dilation will alternate between 1 and 2.
+
+For the GCN layer we can precompute the powers of the diffusion matrix and reuse, since the adjacency is the same (the entire road network).
+I can implement this as a caching mechanism, the same way the PyG [GCN](https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.GCNConv.html) layer does.
+There it caches the adjacency normalisation, but we can use a similar mechanism to store the powers of the adjacency.
+These adjacencies won't change unless the graph structure changes, which we do not expect.
+
+But before I embark on implementing a new layer, could we possibly use the [GDN](https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.transforms.GDC.html) PyG implementation of "Diffusion Improves Graph Learning" [@gasteiger2022diffusionimprovesgraphlearning]?
+It seems to do a bunch of other things like sparsification as built-in, so maybe not the right choice.
+How about the [MixHop](https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.MixHopConv.html) module, introduced in [@abuelhaija2019mixhophigherordergraphconvolutional]? This one simply does the following operation:
+
+\begin{equation}
+    \mathbf{Z} = \Vert_{p \in P} \left( \hat{\mathbf{D}}^{-\frac{1}{2}}\hat{\mathbf{A}}\hat{\mathbf{D}}^{-\frac{1}{2}} \right)^{p}\mathbf{X}\mathbf{\Theta}
+\end{equation}
+
+Where $\Vert$ is concatenation. We could reshape the concatenated vector and sum-reduce, yielding:
+
+\begin{equation}
+    \mathbf{Z} = \sum_{p \in P} \left( \hat{\mathbf{D}}^{-\frac{1}{2}}\hat{\mathbf{A}}\hat{\mathbf{D}}^{-\frac{1}{2}} \right)^{p}\mathbf{X}\mathbf{\Theta}
+\end{equation}
+
+But unfortunately we can't seem to change the normalisation, it is built-in symmetric.
+Note how close this is to the diffusion convolution:
+
+\begin{equation}
+    \mathbf{Z} = \sum_{k=0}^{K}\mathbf{P}^k \mathbf{X} \mathbf{W}_1
+\end{equation}
+
+If we were to set $P = (0,1,2)$, and replace $\left( \hat{\mathbf{D}}^{-\frac{1}{2}}\hat{\mathbf{A}}\hat{\mathbf{D}}^{-\frac{1}{2}} \right)^{p}$ with $\left(\mathbf{A}\mathbf{D}^{-1}\right)^p$, then we should have exactly the diffusion convolution as defined in the paper.
+Maybe implementing the exact Diffusion module can be future work, let's just use MixHop.
+The normalisation won't be right, but the support for the convolution should be the same.
+
+![Inspiring productivity: Author unknown](./images/mediocrates.png)
+
+- [ ] Implement Diffusion conv with the correct normalisation.
+
+So to summarise, use ```torch_geometric.nn.conv.MixHopConv``` as originally implemented.
+It transforms $(*, C_{in}) \longrightarrow (*, |P|C_{out})$ due to concatenation.
+Follow up the layer with reshape $(*, |P|, C_{out})$ then sum along $|P|$ to get back $(*, C_{out})$.
+
+:::{.callout-note}
+In presentation, would be worth to explain PyG batching.
+:::
+
+Annoyingly, I'm trying to use MixHop, but it doesn't know what to do with nodes that have more than one feature dimension.
+Ok, so looks like we'll be implementing Diffusion from scratch.
+Might as well go through how to implement a PyG module.. Mediocrates has lost on this occasion.
+
+MixHop is a mess when dealing with time series in the nodes. So build a custom diffusion using matrix multiplication...
+
+- [ ] Implement two versions of Diffusion. One in the graph and one in the node view.
+
+Ok, but on the other hand, building Diffusion in the graph view, you run into an issue if you also use PyG Data types.
+This is because the way PyG does batching is to create block-diagonal adjacency instead of creating a batch dimension.
+The PyG way is good for when the batched graphs have different sizes, but in my case I'd need to either modify the adjacency for the correct batch size, or stop using PyG Data.
+I don't like these two solutions, because they are overly specific to this problem, and the code will start to look a lot like the original GWnet repo.
+On the other hand, I could implement a Diffusion PyG module that works with the (C,T) feature tensors, which MixHop doesn't seem to like.
+This approach seems to be the best in terms of design, because my modification is limited to subclassing MessagePassing for my particular problem.
+It is also educational, because I get to introduce how to build a MessagePassing GNN layer.
+However, unless I implement caching of the adjacency powers, every layer would have to compute three steps of message passing.
+Luckily, I think it would be straightforward to cache, since you always pass the edge index to a graph conv layer, hence you can pass a different adjacency than the input's.
+
+Let's break down the full equation:
+
+\begin{equation}
+    \mathbf{Z} = \sum_{k=0}^{K}\mathbf{P}^k_f \mathbf{X} \mathbf{W}_{k}^{(f)} + \mathbf{P}^k_b \mathbf{X} \mathbf{W}_{k}^{(b)} + \tilde{\mathbf{A}}^k_{apt} \mathbf{X} \mathbf{W}_{k}^{(apt)}
+\end{equation}
+
+The new state of a node $\mathbf{Z}$ is the sum of $K+1$ terms of the form $\mathbf{A}_{k}\mathbf{X}\mathbf{W}_{k}$, for some adjacency $\mathbf{A}_k$ and dense update weights $\mathbf{W}_k$.
+For $k=0$ the graph convolution becomes simply a Linear update to each node, since $\mathbf{A}^0 = \mathbf{I}$, hence the three terms become:
+
+\begin{equation}
+    \mathbf{X}\mathbf{W}^{(f)}_0 + \mathbf{X}\mathbf{W}^{(b)}_0 + \mathbf{X}\mathbf{W}^{(adp)}_0 = \mathbf{X}\left( \mathbf{W}^{(f)}_0 + \mathbf{W}^{(b)}_0 + \mathbf{W}^{(adp)}_0\right) = \mathbf{X}\mathbf{W}
+\end{equation}
+
+I'm not sure why the zeroth term is added to the sum, but it looks like we can instead start the sum from $k=1$ and add one Linear layer that updates each node without the graph signal. Hence, the update equation becomes:
+
+\begin{equation}
+    \mathbf{Z} = \sum_{k=1}^{K}\left[\mathbf{P}^k_f \mathbf{X} \mathbf{W}_{k}^{(f)} + \mathbf{P}^k_b \mathbf{X} \mathbf{W}_{k}^{(b)} + \tilde{\mathbf{A}}^k_{apt} \mathbf{X} \mathbf{W}_{k}^{(apt)}\right] + \mathbf{X}\mathbf{W}_0 + \mathbf{b}
+\end{equation}
+
+Where $\mathbf{X}\mathbf{W}_0$ is the update from $k=0$ as discussed above, and $\mathbf{b}$ is the layer's bias.
+The term $\mathbf{X}\mathbf{W}_0 + \mathbf{b}$ together can be built as a ```nn.Linear``` with ```bias=True```.
+
+Luckily, if we look at how the PyG [GCNConv](https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.nn.conv.GCNConv.html) layer works, we notice that you can set ```normalize=False```, which configures the layer to only do:
+
+```python
+def forward(self, x: Tensor, edge_index: Adj,
+            edge_weight: OptTensor = None) -> Tensor:
+
+    x = self.lin(x)
+
+    # propagate_type: (x: Tensor, edge_weight: OptTensor)
+    out = self.propagate(edge_index, x=x, edge_weight=edge_weight)
+
+    if self.bias is not None:
+        out = out + self.bias
+
+    return out
+```
+
+So further setting ```bias=False``` means the layer simply does $\mathbf{A}\mathbf{X}\mathbf{W}$, where the weights associated with $\mathbf{A}$ are passed as ```edge_weight```.
+This means that our graph convolution module can be built up from $KM$ ```GCNConv``` Modules, each using a separate adjacency matrix.
+The integer $M \in \left[1, 3\right]$ is how many of the adjacencies: forward, backward diffusion and adaptive the model is using.
+These adjacency matrices could be stored in the parent Module, and our custom graph conv Module could be instantiated with a reference to its parent.
+Note also that on every forward pass we would have to compute $\mathbf{A}_{apt}$, because backpropagation will have changed the node embeddings.
+And, of course, we would also have to register the node embedding matrix as a ```Parameter``` which requires grad.
+I wonder how this would change whether the model is inductive or transductive?
+You definitely won't be able to use a new node's embeddings.
+
+:::{.callout-note}
+Ok, so all the GCNs in our Graph Wavenet take the input and perform the propagation operation.
+These operations can be done in parallel, similarly to multihead attention.
+So, is there a way to do this easily in parallel, or does this start to enter the realm of optimisation..?
+:::
+
+Passing the adjacency into the GWnet constructor seemed as the way to precompute, but I'd have to pass the adjacency of a BatchedData, otherwise the batching is not taken care of.
+It might be easier to precompute the diffusion adjacencies on each forward pass, so that you directly get access to the batched adjacency index and weights.
+It also means that this should trivially work if subgraphing, because the precomputation is done once the subgraph is sampled.
+But in either case, there is no getting away from the fact that the adaptive adjacency has to be computed on each forward, that it is not batched, and that I will likely have to make it fit the batch manually.
+Luckily, there is ```torch.block_diag```, which might be able to do it easily, but it does not support sparse inputs [yet](https://github.com/pytorch/pytorch/issues/31942) and might be inefficient to go to dense for the entire batch, then to sparse again.
+
+- [ ] Implement adjacency precomputation per forward pass
+- [ ] Implement adaptive adjacency computation per forward pass using ```torch.block_diag```.
+- [ ] Look whether I can contribute to [https://github.com/pytorch/pytorch/issues/31942](https://github.com/pytorch/pytorch/issues/31942)
+
+Ok so today I built the adjacency precomputation, but I'm not sure whether the powers are correct, because no new edges are added to the index.
+Looks like taking powers of sparse matrices might be a little more involved than simply using Python syntax.
+
+- [ ] Write GH Pytorch issue requesting powers for sparse matrix?
+- [ ] GH Pytorch sparse division by vector?
+
+Taking the power of the dense batch adjacency and then saving it once?
+But it also looks like we can take powers of the COO matrix, so maybe it will work straightaway if I pass the real COO matrix.
+The adaptive bit I'd have to compute densely and take powers, but then I can turn into a batch block diagonal using utility functions.
+So maybe the way to go is dense powers of forward and backward once at beginning of training, then per forward pass update the adaptive adjacency.
+
+I've precomputed the adjacencies, but still there is the problem of GCN not knowing how to handle (N,C,L) tensors.
+I'll likely have to implement a GCN that does that correctly.
+By precomputing, I think we can run the sum concurrently, but I don't know how to do that.
+Instead, I could run the newly implemented GCN as a loop over the k-hops.
+
+- [ ] Build a custom GCN layer that can handle the time series node type.
+- [ ] Open PyG issue for (N, L, C) features breaking GCNConv.
+
+Ok so my layer seems to work if using ```torch.nn.Linear``` with transposition, but ```torch_geometric.nn.dense.Linear``` with transposition doesn't work?
+What's going on?
+Anyway, it looks like it's doing the correct thing after essentially replacing the PyG Linear with the torch Linear in my custom layer.
+Also fixed bug when computing the transition matrix, so now it makes sense when I check the output.
+
+At this point, the residual module looks correct and it produces outputs of a sensible shape.
+Ok so what are the skip convolutions, and how do I select the correct vector to add to the skip output?
+I've chosen to add to the skipped output the value of only the last element of the temporal sequence.
+This is in part because that's how I interpret the official implementation.
+In this way, all previous timesteps act as context for the final one, a bit like how ViT has a special classification token that holds the output, and uses the other tokens as context.
+
+#### Training script
+
+I'll use torch lightning.
+
+- [ ] Introduce torch lightning.
+
+There are a couple of points to note about the training procedure.
+First, loss is not calculated on the missing values, which in METR-LA are denoted as 0.0.
+Second, the MAE in literature is calculated in the unnormalised range, so keep that in mind when reporting it.
 
 ### References
 
