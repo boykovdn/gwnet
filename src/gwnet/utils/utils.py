@@ -36,8 +36,9 @@ class TrafficStandardScaler:
             traffic_vals.append(dataset[randidx].x[:, 0, :].ravel())
 
         traffic_vals = torch.stack(traffic_vals)
-        mu = traffic_vals.mean()
-        std = traffic_vals.std()
+        # NOTE The missing values are denoted as 0, don't include in mean computation.
+        mu = traffic_vals[traffic_vals != 0].mean()
+        std = traffic_vals[traffic_vals != 0].std()
 
         return cls(mu, std)
 
