@@ -381,6 +381,11 @@ There are a couple of points to note about the training procedure.
 First, loss is not calculated on the missing values, which in METR-LA are denoted as 0.0.
 Second, the MAE in literature is calculated in the unnormalised range, so keep that in mind when reporting it.
 
+Ok so I've written a little training script, and linted the model code.
+Yet to find out whether the training does anything useful.
+Next step might be to plot the adaptive adjacency as the training progresses.
+Also profile the training to see whether I get any bottlenecks as I used to before.
+
 ### References
 
 ::: {#refs}

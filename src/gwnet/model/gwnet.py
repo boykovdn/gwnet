@@ -208,6 +208,9 @@ class GraphWavenet(torch.nn.Module):
             self.register_parameter("node_embeddings", None)
             adp = False
 
+        # TODO Why is node_embeddings not registering?
+        # import pdb; pdb.set_trace()
+
         # This model accepts the entire road network, hence can cache
         # the diffusion adjacency matrices, doesn't have to take their
         # powers on every forward pass.
