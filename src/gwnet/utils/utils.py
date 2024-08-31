@@ -1,4 +1,10 @@
+from __future__ import annotations
+
+from random import randint
+
 import torch
+from torch_geometric.data import Dataset
+from tqdm import tqdm
 
 
 def create_mask(
@@ -13,10 +19,27 @@ def create_mask(
     )
 
 
-class StandardScaler:
-    def __init__(self, mu: torch.Tensor, std: torch.Tensor) -> None:
+class TrafficStandardScaler:
+    def __init__(self, mu: float, std: float) -> None:
         self.mu = mu
         self.std = std
+
+    @classmethod
+    def from_dataset(
+        cls, dataset: Dataset, n_samples: int = 100
+    ) -> TrafficStandardScaler:
+        traffic_vals: torch.Tensor | list[torch.Tensor] = []  # Holds tensors for stack.
+        for _ in tqdm(range(n_samples), desc="Initialising scaler statistics..."):
+            randidx = randint(0, len(dataset) - 1)
+            # NOTE Here 0th feature is hardcoded as the traffic, unravel
+            # into a sequence of values to be computed over.
+            traffic_vals.append(dataset[randidx].x[:, 0, :].ravel())
+
+        traffic_vals = torch.stack(traffic_vals)
+        mu = traffic_vals.mean()
+        std = traffic_vals.std()
+
+        return cls(mu, std)
 
     def transform(self, x: torch.Tensor) -> torch.Tensor:
         return (x - self.mu) / self.std

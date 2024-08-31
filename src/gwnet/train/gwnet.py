@@ -1,11 +1,10 @@
-from collections.abc import Callable
 from typing import Any
 
 import lightning.pytorch as pl
 import torch
 from torch_geometric.data import Data
 
-from ..utils import create_mask
+from ..utils import TrafficStandardScaler, create_mask
 
 
 class GWnetForecasting(pl.LightningModule):
@@ -14,7 +13,7 @@ class GWnetForecasting(pl.LightningModule):
         args: dict[str, Any],
         model: torch.nn.Module,
         missing_value: float = 0.0,
-        scaler: Callable[[torch.Tensor], torch.Tensor] | None = None,
+        scaler: TrafficStandardScaler | None = None,
     ) -> None:
         r"""
         Trains Graph wavenet for the traffic forecasting task.
@@ -65,12 +64,15 @@ class GWnetForecasting(pl.LightningModule):
         return torch.sum(loss[mask]) / num_terms
 
     def training_step(self, input_batch: Data, batch_idx: int) -> torch.Tensor:  # noqa: ARG002
+        if self.scaler is not None:
+            # NOTE Normalise only the traffic feature, hardcoded as 0.
+            input_batch.x[:, 0] = self.scaler.transform(input_batch.x[:, 0])
+
         targets = input_batch.y
         out = self.model(input_batch)
 
         if self.scaler is not None:
-            raise NotImplementedError()
-            # out = self.scaler.inverse_transform(out)
+            out = self.scaler.inverse_transform(out)
 
         loss = self.masked_mae_loss(out, targets)
         self.log("train_loss", loss)

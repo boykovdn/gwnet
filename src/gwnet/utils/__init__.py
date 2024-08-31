@@ -1,3 +1,3 @@
-from .utils import StandardScaler, create_mask
+from .utils import TrafficStandardScaler, create_mask
 
-__all__ = ["create_mask", "StandardScaler"]
+__all__ = ["create_mask", "TrafficStandardScaler"]

@@ -76,7 +76,7 @@ class METRLA(InMemoryDataset):
         num_timesteps_in: int,
         num_timesteps_out: int,
         interpolate: bool = False,
-        normalize: bool = True,
+        normalize: bool = False,
     ) -> tuple[np.ndarray, np.ndarray]:
         r"""
         Build the input and output features.
