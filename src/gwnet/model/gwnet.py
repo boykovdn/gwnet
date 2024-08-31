@@ -3,6 +3,7 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
+from torch.nn.parameter import Parameter
 from torch_geometric.data import Data
 from torch_geometric.utils import to_dense_adj
 
@@ -75,7 +76,7 @@ class DiffusionConv(torch.nn.Module):
         """
         super().__init__()
 
-        self.id_linear = torch.nn.Linear(in_channels, out_channels, bias=bias)
+        # self.id_linear = torch.nn.Linear(in_channels, out_channels, bias=bias)
 
         # Create one GCN per hop and diffusion direction.
         gcn_dict = {}
@@ -97,6 +98,11 @@ class DiffusionConv(torch.nn.Module):
                     in_channels, out_channels, bias=False, node_dim=0
                 )
 
+        if bias:
+            self.bias = Parameter(torch.randn(out_channels))
+        else:
+            self.register_parameter("bias", None)
+
         self.gcns = torch.nn.ModuleDict(gcn_dict)
 
     def forward(self, x: Data, cached_params: dict[str, torch.Tensor]) -> Data:
@@ -114,6 +120,11 @@ class DiffusionConv(torch.nn.Module):
             out_sum += gcn_(
                 x.x.transpose(1, 2), adj_index, cached_params["adj_weights"][adj_name]
             ).transpose(1, 2)
+
+        x.x = out_sum
+
+        if self.bias is not None:
+            x.x += self.bias.view(1, -1, 1)
 
         return x
 
@@ -161,7 +172,6 @@ class STResidualModule(torch.nn.Module):
         # TCN works on the features alone, and handles the (N,C,L) shape
         # internally.
         tcn_out = self.tcn(x)
-
         return self.gcn(tcn_out, cached_adj)
 
 
@@ -207,9 +217,6 @@ class GraphWavenet(torch.nn.Module):
         else:
             self.register_parameter("node_embeddings", None)
             adp = False
-
-        # TODO Why is node_embeddings not registering?
-        # import pdb; pdb.set_trace()
 
         # This model accepts the entire road network, hence can cache
         # the diffusion adjacency matrices, doesn't have to take their
@@ -383,7 +390,8 @@ class GraphWavenet(torch.nn.Module):
                 )
             )
 
-        self._update_adp_adj(batch.batch.max() + 1, self.global_elements["k_hops"])
+        if self.node_embeddings is not None:
+            self._update_adp_adj(batch.batch.max() + 1, self.global_elements["k_hops"])
 
         # x_dict = batch.x_dict
         # edge_index_dict = batch.edge_index_dict

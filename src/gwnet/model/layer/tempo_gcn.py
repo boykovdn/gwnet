@@ -41,6 +41,10 @@ class TempGCN(MessagePassing):
 
         self.linear = torch.nn.Linear(in_channels, out_channels, bias=bias)
 
+    def message(self, x_j: torch.Tensor, edge_weight: torch.Tensor) -> torch.Tensor:
+        # Message is the original input times the edge weight.
+        return x_j * edge_weight.view(-1, 1, 1)
+
     def forward(
         self,
         x: torch.Tensor,
