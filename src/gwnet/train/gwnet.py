@@ -63,6 +63,9 @@ class GWnetForecasting(pl.LightningModule):
         loss = torch.abs(preds - targets)
         return torch.sum(loss[mask]) / num_terms
 
+    def validation_step(self, input_batch: Data, batch_idx: int) -> torch.Tensor:  # noqa: ARG002
+        return torch.zeros(1)
+
     def training_step(self, input_batch: Data, batch_idx: int) -> torch.Tensor:  # noqa: ARG002
         if self.scaler is not None:
             # NOTE Normalise only the traffic feature, hardcoded as 0.
