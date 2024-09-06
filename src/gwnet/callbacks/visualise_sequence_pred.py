@@ -47,7 +47,7 @@ class VisualiseSequencePrediction(Callback):
                     data.x[:, 0] = pl_module.scaler.inverse_transform(data.x[:, 0])
 
                 trainer.logger.experiment.add_scalar(
-                    "Sequence true", data.x[node_idx, 0, steps_ahead], t
+                    "Sequence true", data.y[node_idx, steps_ahead], t
                 )
 
             trainer.logger.experiment.add_scalar(

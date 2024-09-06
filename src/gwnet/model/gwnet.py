@@ -138,6 +138,7 @@ class STResidualModule(torch.nn.Module):
         out_channels: int,
         dilation: int = 1,
         kernel_size: int = 2,
+        disable_gcn: bool = False,
     ):
         r"""
         Wraps the TCN and GCN modules.
@@ -146,8 +147,13 @@ class STResidualModule(torch.nn.Module):
             args (dict): Contains parameters passed from the parent module, namely
                 flags showing which adjacency matrices to expect and initialise
                 parameters for.
+
+            disable_gcn (bool): If True, the GCN aggregation will not be computed,
+                so effectively the model will have no graph component.
         """
         super().__init__()
+
+        self._disable_gcn = disable_gcn
 
         self.tcn = GatedTCN(
             in_channels, interm_channels, kernel_size=kernel_size, dilation=dilation
@@ -167,11 +173,17 @@ class STResidualModule(torch.nn.Module):
         to each other, and the node index matters.
 
         Args:
-            x: The batched Data object.
+            x (Data): The batched Data object.
+
+            cached_adj (dict): Adjacency matrices used in the GCN calculation.
         """
         # TCN works on the features alone, and handles the (N,C,L) shape
         # internally.
         tcn_out = self.tcn(x)
+
+        if self._disable_gcn:
+            return tcn_out
+
         return self.gcn(tcn_out, cached_adj)
 
 
@@ -191,6 +203,7 @@ class GraphWavenet(torch.nn.Module):
         n_nodes: int | None = None,
         forward_diffusion: bool = True,
         backward_diffusion: bool = True,
+        disable_gcn: bool = False,
     ):
         r"""
         Initialise the GWnet model.
@@ -257,6 +270,7 @@ class GraphWavenet(torch.nn.Module):
                         dilation_channels,
                         residual_channels,
                         dilation=dilation,
+                        disable_gcn=disable_gcn,
                     ),
                 )
             )

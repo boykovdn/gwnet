@@ -12,10 +12,12 @@ from gwnet.utils import TrafficStandardScaler
 
 def train():
     args = {"lr": 0.001, "weight_decay": 0.0001}
-    device = "mps"
+    device = "cuda"
     num_workers = 0  # NOTE Set to 0 for single thread debugging!
 
-    model = GraphWavenet(adaptive_embedding_dim=None, n_nodes=207, k_diffusion_hops=3)
+    model = GraphWavenet(
+        adaptive_embedding_dim=None, n_nodes=207, k_diffusion_hops=3, disable_gcn=True
+    )
     plmodule = GWnetForecasting(args, model, missing_value=0.0)
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir="logs/")
