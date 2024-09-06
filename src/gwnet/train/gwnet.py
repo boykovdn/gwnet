@@ -61,6 +61,13 @@ class GWnetForecasting(pl.LightningModule):
         num_terms = torch.sum(mask)
 
         loss = torch.abs(preds - targets)
+
+        if num_terms == 0:
+            # Occasionally, all values are missing or 0. In this case,
+            # return a loss of 0 and gradient function, which can be
+            # done by selecting no values (mask all False) and summing.
+            return torch.sum(loss[mask])
+
         return torch.sum(loss[mask]) / num_terms
 
     def validation_step(self, input_batch: Data, batch_idx: int) -> torch.Tensor:  # noqa: ARG002
@@ -78,6 +85,9 @@ class GWnetForecasting(pl.LightningModule):
             out = self.scaler.inverse_transform(out)
 
         loss = self.masked_mae_loss(out, targets)
-        self.log("train_loss", loss)
+
+        if loss != 0.0:
+            # A loss of 0.0 means all values are missing or 0. This pollutes the log.
+            self.log("train_loss", loss)
 
         return loss

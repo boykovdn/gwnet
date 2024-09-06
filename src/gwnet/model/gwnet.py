@@ -3,7 +3,6 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
-from torch.nn.parameter import Parameter
 from torch_geometric.data import Data
 from torch_geometric.utils import to_dense_adj
 
@@ -76,7 +75,7 @@ class DiffusionConv(torch.nn.Module):
         """
         super().__init__()
 
-        # self.id_linear = torch.nn.Linear(in_channels, out_channels, bias=bias)
+        self.id_linear = torch.nn.Linear(in_channels, out_channels, bias=bias)
 
         # Create one GCN per hop and diffusion direction.
         gcn_dict = {}
@@ -98,11 +97,6 @@ class DiffusionConv(torch.nn.Module):
                     in_channels, out_channels, bias=False, node_dim=0
                 )
 
-        if bias:
-            self.bias = Parameter(torch.randn(out_channels))
-        else:
-            self.register_parameter("bias", None)
-
         self.gcns = torch.nn.ModuleDict(gcn_dict)
 
     def forward(self, x: Data, cached_params: dict[str, torch.Tensor]) -> Data:
@@ -110,7 +104,7 @@ class DiffusionConv(torch.nn.Module):
         Args:
             x (Data): Input graph.
         """
-        out_sum = 0
+        out_sum = self.id_linear(x.x.transpose(1, 2))
         for adj_name, adj_index in cached_params["adj_indices"].items():
             gcn_ = self.gcns[adj_name]
             # NOTE Some trickery here. In TempGCN the dense layer works on the
@@ -119,12 +113,9 @@ class DiffusionConv(torch.nn.Module):
             # transpose C_in, L then transpose back to C_out, L.
             out_sum += gcn_(
                 x.x.transpose(1, 2), adj_index, cached_params["adj_weights"][adj_name]
-            ).transpose(1, 2)
+            )
 
-        x.x = out_sum
-
-        if self.bias is not None:
-            x.x += self.bias.view(1, -1, 1)
+        x.x = out_sum.transpose(1, 2)
 
         return x
 
@@ -162,6 +153,8 @@ class STResidualModule(torch.nn.Module):
             args, interm_channels, out_channels
         )  # TODO # interm -> out channels, diffusion_hops
 
+        self.skip_linear = torch.nn.Linear(in_channels, out_channels)
+
     def forward(self, x: Data, cached_adj: dict[str, torch.Tensor]) -> Data:
         r"""
         Apply the gated TCN followed by GCN.
@@ -182,9 +175,16 @@ class STResidualModule(torch.nn.Module):
         tcn_out = self.tcn(x)
 
         if self._disable_gcn:
+            tcn_out.x = tcn_out.x + self.skip_linear(x.x.transpose(1, 2)).transpose(
+                1, 2
+            )
             return tcn_out
 
-        return self.gcn(tcn_out, cached_adj)
+        residual = self.gcn(tcn_out, cached_adj)
+
+        residual.x = residual.x + self.skip_linear(x.x.transpose(1, 2)).transpose(1, 2)
+
+        return residual
 
 
 class GraphWavenet(torch.nn.Module):
