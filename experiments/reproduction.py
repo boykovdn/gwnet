@@ -23,11 +23,11 @@ def train():
     tb_logger = pl_loggers.TensorBoardLogger(save_dir="logs/")
     trainer = pl.Trainer(
         accelerator=device,
-        max_steps=10000,
+        max_steps=100000,
         limit_val_batches=1,  # TODO Debugging
         gradient_clip_val=5.0,  # TODO There was something about this in the code.
         logger=tb_logger,
-        val_check_interval=500,
+        val_check_interval=1000,
         callbacks=[VisualiseSequencePrediction(torch.device(device))],
     )
 
@@ -35,7 +35,7 @@ def train():
     scaler = TrafficStandardScaler.from_dataset(dataset, n_samples=30000)
     plmodule.scaler = scaler
     ## TODO Parametrise.
-    loader = DataLoader(dataset, batch_size=64, num_workers=num_workers)
+    loader = DataLoader(dataset, batch_size=32, num_workers=num_workers, shuffle=True)
 
     ## TODO Change the validation loader to NOT the training loader!
     # This is for debugging the visualisation atm.
