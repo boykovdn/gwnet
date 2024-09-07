@@ -386,6 +386,21 @@ Yet to find out whether the training does anything useful.
 Next step might be to plot the adaptive adjacency as the training progresses.
 Also profile the training to see whether I get any bottlenecks as I used to before.
 
+I fixed a NaN bug where having all 0 inputs breaks.
+Forgot to shuffle the dataset, which completely throws it off.
+And added the missing skip connections to the residual modules.
+Now it looks like it does something useful.
+However, adding the adaptive adjacency massively increases the GPU cost.
+I will likely need to optimise it, I can only train up to 8 batch size on 12Gb of VRAM at the moment.
+Not sure off the top of my head where the massive memory footprint comes from, maybe I didn't make the matrix sparse?
+
+- [ ] Write the validation and test steps.
+- [ ] Parameterise the reproduction script.
+- [ ] Debug/optimise the adaptive adjacency.
+- [ ] Visualise the adaptive adjacency evolution using nx in tensorboard.
+- [ ] Add PEMS-BAY dataset.
+
+
 ### References
 
 ::: {#refs}

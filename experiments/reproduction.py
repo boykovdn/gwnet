@@ -16,7 +16,7 @@ def train():
     num_workers = 0  # NOTE Set to 0 for single thread debugging!
 
     model = GraphWavenet(
-        adaptive_embedding_dim=None, n_nodes=207, k_diffusion_hops=3, disable_gcn=False
+        adaptive_embedding_dim=64, n_nodes=207, k_diffusion_hops=3, disable_gcn=False
     )
     plmodule = GWnetForecasting(args, model, missing_value=0.0)
 
@@ -35,7 +35,7 @@ def train():
     scaler = TrafficStandardScaler.from_dataset(dataset, n_samples=30000)
     plmodule.scaler = scaler
     ## TODO Parametrise.
-    loader = DataLoader(dataset, batch_size=32, num_workers=num_workers, shuffle=True)
+    loader = DataLoader(dataset, batch_size=8, num_workers=num_workers, shuffle=True)
 
     ## TODO Change the validation loader to NOT the training loader!
     # This is for debugging the visualisation atm.

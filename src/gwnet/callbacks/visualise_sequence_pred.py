@@ -27,7 +27,12 @@ class VisualiseSequencePrediction(Callback):
         model = pl_module.model
 
         for t in range(offset, offset + seq_len):
-            data = dset[t].to(self.device)
+            data = dset[t]
+            # Add dummy batch array of all 0s. This corresponds to all nodes
+            # being part of the same batch.
+            data.batch = torch.zeros(data.x.shape[0]).int()
+            data.ptr = torch.zeros(1).int()
+            data = data.to(self.device)
 
             # Two ugly conditionals make sure that the model works on
             # scaled data, and the output is scaled back into mph.
