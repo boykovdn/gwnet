@@ -400,6 +400,30 @@ Not sure off the top of my head where the massive memory footprint comes from, m
 - [ ] Visualise the adaptive adjacency evolution using nx in tensorboard.
 - [ ] Add PEMS-BAY dataset.
 
+It looks like the dense_to_sparse function takes up a lot of time.
+Potentially I can mess around trying to optimise the operation?
+In the original implementation they don't work with sparse matrices and thus don't have the issues I'm having.
+But the sparse matrices are central to working with PyG, and with the selling point of scalability.
+It would be fun to try to build the CUDA module for sparsification, but for now the easiest solution might be to manually construct the matrix.
+Notice that I'm sparsifying a matrix of size batch_size * N, and the 0 entries scale as batch_size^2.
+Ok, so it seems that there is a Pytorch Issue (https://github.com/pytorch/pytorch/issues/31942) addressing block_diag sparse tensors.
+It would likely be better to work on that instead, and it should make my implementation faster anyway.
+No way forward without fixing that issue!
+
+Actually, couldn't you:
+- Take powers before block-diagonalisation, then block-diag it.
+    - Yes, but you still have to sparsify a dense block-diag matrix, which is the bottleneck.
+- Use torch.sparse.mm to compute the powersafter sparsification?
+    - Yes, but that doesn't solve constructing the sparse block-diag.
+
+How about using the torch geometric collation function to build the sparse matrix as a batch?
+
+Well, turns out the issue is not with sparsifying the matrix.
+It's to do with the size of the 207x207 adjacency - using softmax directly removes the 0s, hence I've been working with a dense matrix.
+Changing softmax for normalize, and initialising using a Gaussian removes about 50% of the values, and speeds up the computation.
+Question is, does the adaptive adjacency tend towards sparsity on its own?
+
+Well, it seems to run at a more acceptable rate, and it outperforms the no adjacency case.
 
 ### References
 

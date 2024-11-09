@@ -23,7 +23,7 @@ def train():
     tb_logger = pl_loggers.TensorBoardLogger(save_dir="logs/")
     trainer = pl.Trainer(
         accelerator=device,
-        max_steps=100000,
+        max_steps=10000,  # 100000,
         limit_val_batches=1,  # TODO Debugging
         gradient_clip_val=5.0,  # TODO There was something about this in the code.
         logger=tb_logger,

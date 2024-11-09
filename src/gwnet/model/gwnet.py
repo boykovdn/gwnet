@@ -223,7 +223,7 @@ class GraphWavenet(torch.nn.Module):
                 raise Exception(adp_err_msg)
 
             self.node_embeddings = torch.nn.Parameter(
-                torch.rand(n_nodes, adaptive_embedding_dim)
+                torch.randn(n_nodes, adaptive_embedding_dim)
             )
             adp = True
 
@@ -310,8 +310,8 @@ class GraphWavenet(torch.nn.Module):
             self.global_elements["adj_weights"] = {}
 
         # (N, C) @ (C, N) -> (N, N)
-        adp_adj = F.softmax(
-            F.relu(self.node_embeddings @ self.node_embeddings.T), dim=1
+        adp_adj = F.normalize(
+            F.relu(self.node_embeddings @ self.node_embeddings.T), dim=1, p=1
         )
         adp_adj_dense_batch = torch.block_diag(*[adp_adj] * batch_size)
 
