@@ -16,9 +16,10 @@ Currently can install everything except PyGT. So, next step is to modify the loa
 
 ### TODOs
 
-- [ ] Port code I already have to this repo.
-- [ ] Identify the relevant bits that have to come in here.
+- [x] Port code I already have to this repo.
+- [x] Identify the relevant bits that have to come in here.
 - [ ] Ensure dataloader downloads data from reputable place (Zenodo?) and no pickles are used.
+    - Nope
 - [ ] Produce reproduction table for three metrics.
 - [ ] Setup CI/CD and testing.
 - [ ] Package indexed and installable via pip.
@@ -33,7 +34,8 @@ Currently using torch geometric temporal dataset classes. Change to something th
 We want to provide more quality of life changes to the data downloading, unpacking, etc process.
 
 - [ ] Remove interpolation? At least note that it is off.
-- [ ] Remove having to load pickles.
+- [-] Remove having to load pickles.
+    - Can't be done without going to jail.
 
 #### Loss
 - loss/supervised/*.py
@@ -66,7 +68,7 @@ Not sure if we need any of these, but most are helper functions for the experime
 Previously the code used to work with StaticGraphTemporalSignal as the iterator to the dataset. I am guessing the advantage to that is in case you are using a RNN type network, which is likely quite common for temporal data. For that type of application, the data must come as a temporal sequence.
 For graph wavenet, we will train using minibatches that contain all the relevant temporal information as time series associated with a node. This means we don't necessarily need to adhere to the temporal sequence once, we can randomly sample and build our batches like that.
 
-- [ ] Introduce PyGT and PyG libraries.
+- [x] Introduce PyGT and PyG libraries.
 
 I begin the implementation by removing the dependency on PyGT. PyGT was difficult to install during RedyGraph, and it remains difficult to install to this day.
 
@@ -83,7 +85,8 @@ Perhaps I should contribute this to PyG, and also create a different record that
 
 - [ ] Build two in-memory dataset loaders for METR-LA and PEMS-BAY, and push upstream to PyG.
 	- [ ] To push to upstream, I need to write the docstring as done in the other datasets.
-- [ ] Find a better way to distribute the adjacency matrix than a pickle.
+- [-] Find a better way to distribute the adjacency matrix than a pickle.
+    - Licensing will be an issue, so pickle it is.
 
 Anyway, I have opened that pickle in the past and I know it is safe, so let's build the loader on top of that and modify it later.
 Here are the functions I need to implement:
@@ -249,7 +252,7 @@ The normalisation won't be right, but the support for the convolution should be 
 
 ![Inspiring productivity: Author unknown](./images/mediocrates.png)
 
-- [ ] Implement Diffusion conv with the correct normalisation.
+- [x] Implement Diffusion conv with the correct normalisation.
 
 So to summarise, use ```torch_geometric.nn.conv.MixHopConv``` as originally implemented.
 It transforms $(*, C_{in}) \longrightarrow (*, |P|C_{out})$ due to concatenation.
@@ -337,8 +340,8 @@ It also means that this should trivially work if subgraphing, because the precom
 But in either case, there is no getting away from the fact that the adaptive adjacency has to be computed on each forward, that it is not batched, and that I will likely have to make it fit the batch manually.
 Luckily, there is ```torch.block_diag```, which might be able to do it easily, but it does not support sparse inputs [yet](https://github.com/pytorch/pytorch/issues/31942) and might be inefficient to go to dense for the entire batch, then to sparse again.
 
-- [ ] Implement adjacency precomputation per forward pass
-- [ ] Implement adaptive adjacency computation per forward pass using ```torch.block_diag```.
+- [x] Implement adjacency precomputation per forward pass
+- [x] Implement adaptive adjacency computation per forward pass using ```torch.block_diag```.
 - [ ] Look whether I can contribute to [https://github.com/pytorch/pytorch/issues/31942](https://github.com/pytorch/pytorch/issues/31942)
 
 Ok so today I built the adjacency precomputation, but I'm not sure whether the powers are correct, because no new edges are added to the index.
@@ -375,7 +378,7 @@ In this way, all previous timesteps act as context for the final one, a bit like
 
 I'll use torch lightning.
 
-- [ ] Introduce torch lightning.
+- [x] Introduce torch lightning (talk).
 
 There are a couple of points to note about the training procedure.
 First, loss is not calculated on the missing values, which in METR-LA are denoted as 0.0.
@@ -396,7 +399,7 @@ Not sure off the top of my head where the massive memory footprint comes from, m
 
 - [ ] Write the validation and test steps.
 - [ ] Parameterise the reproduction script.
-- [ ] Debug/optimise the adaptive adjacency.
+- [x] Debug/optimise the adaptive adjacency.
 - [ ] Visualise the adaptive adjacency evolution using nx in tensorboard.
 - [ ] Add PEMS-BAY dataset.
 
@@ -424,6 +427,14 @@ Changing softmax for normalize, and initialising using a Gaussian removes about 
 Question is, does the adaptive adjacency tend towards sparsity on its own?
 
 Well, it seems to run at a more acceptable rate, and it outperforms the no adjacency case.
+Might as well try to reproduce the results now.
+Running it with the adjacency matrices will take ages.
+In any case, there should be everything to attempt a faithful reproduction.
+
+To do the reproduction, I need an easy way to split the dataset into train/test/val.
+
+- [x] Implement a split flag into the METRLA dataset.
+    - Actually, easier to do manually after loading.
 
 ### References
 

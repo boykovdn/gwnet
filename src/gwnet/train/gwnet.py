@@ -71,7 +71,23 @@ class GWnetForecasting(pl.LightningModule):
         return torch.sum(loss[mask]) / num_terms
 
     def validation_step(self, input_batch: Data, batch_idx: int) -> torch.Tensor:  # noqa: ARG002
-        return torch.zeros(1)
+        if self.scaler is not None:
+            # NOTE Normalise only the traffic feature, hardcoded as 0.
+            input_batch.x[:, 0] = self.scaler.transform(input_batch.x[:, 0])
+
+        targets = input_batch.y
+        out = self.model(input_batch)
+
+        if self.scaler is not None:
+            out = self.scaler.inverse_transform(out)
+
+        loss = self.masked_mae_loss(out, targets)
+
+        if loss != 0.0:
+            # A loss of 0.0 means all values are missing or 0. This pollutes the log.
+            self.log("val_loss", loss)
+
+        return loss
 
     def training_step(self, input_batch: Data, batch_idx: int) -> torch.Tensor:  # noqa: ARG002
         if self.scaler is not None:
